@@ -7,6 +7,7 @@
 #include <map>
 #include <algorithm>
 #include <stdexcept>
+#include <limits.h>
 
 // we create a symmat that is one size smaller than the distances
 // (only calculate for sites)
@@ -91,6 +92,7 @@ int select_vehicle(const std::vector<int> &vehicle_avail,
                    const std::vector<int> &site_vehicle,
                    const std::vector<double> &load,
                    const std::vector<std::unordered_set<int>> &restricted_vehicles,
+                   const udg &graph,
                    const int a, const int b)
 {
   for (auto it = vehicle_caps.begin(); it != vehicle_caps.end(); it++)
@@ -98,16 +100,37 @@ int select_vehicle(const std::vector<int> &vehicle_avail,
     int vehicle = std::distance(vehicle_caps.begin(), it);
 
     int avail = vehicle_avail[vehicle];
-    // printf("veh avail %i: %d\n", vehicle, avail);
+
+    // if vehicle is already in use at this route we artificially increase
+    // availability by one, since we can reuse the same vehicle.
     if (site_vehicle[a] == vehicle || site_vehicle[b] == vehicle)
     {
-      avail += 1;
+      // check for integer overflow:
+      // if vehicle number is "infinite" there is no need to increase avail.
+      if (avail < INT_MAX) {
+        avail += 1;
+      }
+    }
+
+    bool vehicle_restricted = false;
+
+    // it is not enough to check for vehicle restrictions of the
+    // two sites in question: we need to check restrictions of all sites that are
+    // already on the same tour as those sites.
+    for (auto &site : graph.sites_in_cycle(a)) {
+      vehicle_restricted =
+        vehicle_restricted ||
+          is_vehicle_restricted(restricted_vehicles[site], vehicle);
+    }
+    for (auto &site : graph.sites_in_cycle(b)) {
+      vehicle_restricted =
+        vehicle_restricted ||
+          is_vehicle_restricted(restricted_vehicles[site], vehicle);
     }
 
     if (avail >= 1 &&
         load[a] + load[b] <= vehicle_caps[vehicle] &&
-        !is_vehicle_restricted(restricted_vehicles[a], vehicle) &&
-        !is_vehicle_restricted(restricted_vehicles[b], vehicle))
+        !vehicle_restricted)
     {
       return vehicle;
     }
@@ -136,7 +159,7 @@ std::tuple<int, int, int> best_link(const distmat<double> &savings,
       // printf("Link (%d,%d)\n", i, j);
       // printf("orig1 %d\n", graph.links_to_origin(i));
       // printf("orig2 %d\n", graph.links_to_origin(j));
-      // printf("selected vehicle %d\n", select_vehicle(vehicle_avail, vehicle_caps, site_vehicle, load, i, j));
+      // printf("selected vehicle %d\n", select_vehicle(vehicle_avail, vehicle_caps, site_vehicle, load, restricted_vehicles, graph, i, j));
       // printf("share cycle %d\n", graph.edges_share_cycle(i, j));
 
       int selected_vehicle;
@@ -145,7 +168,7 @@ std::tuple<int, int, int> best_link(const distmat<double> &savings,
           !graph.edges_share_cycle(i, j) &&
           (selected_vehicle =
                select_vehicle(vehicle_avail, vehicle_caps, site_vehicle,
-                              load, restricted_vehicles, i, j)) != -1)
+                              load, restricted_vehicles, graph, i, j)) != -1)
       {
 
         if (savings.get(i, j) > max_val)
@@ -230,6 +253,13 @@ bool routing_state::relink_best()
                 site_vehicle, vehicle_avail,
                 vehicle_caps, restricted_vehicles, graph);
 
+  // printf("---\n");
+  // printf("Best Link (%d,%d)\n", a, b);
+  // printf("orig1 %d\n", graph.links_to_origin(a));
+  // printf("orig2 %d\n", graph.links_to_origin(b));
+  // printf("selected vehicle %d\n", vehicle);
+  // printf("share cycle %d\n", graph.edges_share_cycle(a, b));
+
   if (!((a == b) && (a == -1)))
   {
     graph.relink_edge(a, b);
@@ -237,8 +267,13 @@ bool routing_state::relink_best()
     double new_load = load[a] + load[b];
 
     // return two vehicles
-    vehicle_avail[site_vehicle[a]] += 1;
-    vehicle_avail[site_vehicle[b]] += 1;
+    if (vehicle_avail[site_vehicle[a]] < INT_MAX) {
+      vehicle_avail[site_vehicle[a]] += 1;
+    }
+    if (vehicle_avail[site_vehicle[b]] < INT_MAX) {
+      vehicle_avail[site_vehicle[b]] += 1;
+    }
+
     // take one vehicle
     vehicle_avail[vehicle] -= 1;
 
@@ -274,7 +309,10 @@ bool routing_state::opt_vehicles()
     int site = *((*cyc).begin());
 
     // free current vehicle before we look for the next best one
-    vehicle_avail[site_vehicle[site]] += 1;
+    // only free if not "infinite"
+    if (vehicle_avail[site_vehicle[site]] < INT_MAX) {
+      vehicle_avail[site_vehicle[site]] += 1;
+    }
 
     // unionize vehicle restrictions
     std::unordered_set<int> restr_vehicles;
@@ -376,6 +414,7 @@ col_types routing_state::runs_as_cols() const
     else // if we did not see it before
     {
       visited_elements.insert({cyc, run_id});
+      // we reorder each run again (by solving the TSP)
       order = tsp_greedy(*cyc, distances);
       run_dist = run_distance(order, routing_state::distances);
 

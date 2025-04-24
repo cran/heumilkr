@@ -59,10 +59,10 @@ print.cvrplib_instance <- function(x, ...) {
   cat(format(x, ...), sep = "\n")
 }
 
-#' Applying [clarke_wright()] to CVRPLIB data
+#' Apply [clarke_wright()] to CVRPLIB data
 #'
 #' @param instance
-#'  A "`heumilkr_solution`". See [cvrplib_download()] or bundled CVRPLIB data
+#'  A "`cvrplib_instance`" object. See [cvrplib_download()] or bundled CVRPLIB data
 #'  like [cvrplib_A].
 #'
 #' @return
@@ -70,6 +70,9 @@ print.cvrplib_instance <- function(x, ...) {
 #'
 #' @family cvrplib
 #' @concept cvrplib
+#'
+#' @examples
+#' clarke_wright_cvrplib(cvrplib_A[[1]])
 #'
 #' @export
 clarke_wright_cvrplib <- function(instance) {
@@ -128,10 +131,16 @@ cvrplib_url <- "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/"
 cvrplib_ls <- function() {
   # reading directories first
   rel_dirs <-
-    xml2::read_html(paste0(readLines(url(cvrplib_url)), collapse = "\n")) |>
-    xml2::xml_find_all("//a[substring(@href, string-length(@href) - string-length('/') +1) = '/']") |>
-    xml2::xml_attr("href") |>
-    setdiff(c("/media/com_vrp/", "test/", "CMT/"))
+    setdiff(
+      xml2::xml_attr(
+        xml2::xml_find_all(
+          xml2::read_html(paste0(readLines(url(cvrplib_url)), collapse = "\n")),
+          "//a[substring(@href, string-length(@href) - string-length('/') +1) = '/']"
+        ),
+        "href"
+      ),
+      c("/media/com_vrp/", "test/", "CMT/")
+    )
   # CMT has buggy .sol files
 
   # iterate over all directories and collect file names
@@ -141,17 +150,21 @@ cvrplib_ls <- function() {
       unlist(
         lapply(
           rel_dirs,
-          \(rel_dir) {
+          function(rel_dir) {
             paste0(
               rel_dir,
-              xml2::read_html(
-                paste0(
-                  readLines(url(paste0(cvrplib_url, rel_dir))),
-                  collapse = "\n"
-                )
-              ) |>
-                xml2::xml_find_all("//a[substring(@href, string-length(@href) - string-length('.vrp') +1) = '.vrp']") |>
-                xml2::xml_attr("href")
+              xml2::xml_attr(
+                xml2::xml_find_all(
+                  xml2::read_html(
+                    paste0(
+                      readLines(url(paste0(cvrplib_url, rel_dir))),
+                      collapse = "\n"
+                    )
+                  ),
+                  "//a[substring(@href, string-length(@href) - string-length('.vrp') +1) = '.vrp']"
+                ),
+                "href"
+              )
             )
           }
         )
@@ -228,7 +241,7 @@ cvrplib_download <- function(qualifier) {
       demand_section <- grep("DEMAND_SECTION", content, fixed = TRUE)
       edge_content <- content[edge_weight_section:(demand_section - 1)]
 
-      lower_triang <- as.numeric(unlist(lapply(strsplit(edge_content, "\\s+"), \(x) x[x != ""])))
+      lower_triang <- as.numeric(unlist(lapply(strsplit(edge_content, "\\s+"), function(x) x[x != ""])))
       dmat <- matrix(0, nrow = dimension, ncol = dimension)
       dmat[upper.tri(dmat, diag = TRUE)] <- lower_triang
       pos <- as.data.frame(cmdscale(dist(dmat + t(dmat))))
@@ -238,7 +251,7 @@ cvrplib_download <- function(qualifier) {
       demand_section <- grep("DEMAND_SECTION", content, fixed = TRUE)
       edge_content <- content[edge_weight_section:(demand_section - 1)]
 
-      lower_triang <- as.numeric(unlist(lapply(strsplit(edge_content, "\\s+"), \(x) x[x != ""])))
+      lower_triang <- as.numeric(unlist(lapply(strsplit(edge_content, "\\s+"), function(x) x[x != ""])))
       dmat <- matrix(0, nrow = dimension, ncol = dimension)
       dmat[upper.tri(dmat)] <- lower_triang
       pos <- as.data.frame(cmdscale(dist(dmat + t(dmat))))
@@ -247,7 +260,7 @@ cvrplib_download <- function(qualifier) {
     } else if (edge_weight_format == "FULL_MATRIX") {
       edge_content <- content[edge_weight_section:(edge_weight_section + dimension - 1)]
 
-      dmat <- as.numeric(unlist(lapply(strsplit(edge_content, "\\s+"), \(x) x[x != ""])))
+      dmat <- as.numeric(unlist(lapply(strsplit(edge_content, "\\s+"), function(x) x[x != ""])))
       dim(dmat) <- c(dimension, dimension)
 
       pos <- as.data.frame(cmdscale(dist(dmat)))
